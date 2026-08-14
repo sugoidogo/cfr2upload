@@ -34,7 +34,7 @@ export default {
 
         if (!action) {
             const authReadOnly = await env.AUTH_KV.get("config:auth_read_only");
-            if (authReadOnly === "true") {
+            if (authReadOnly !== "false") {
                 if (!(await authenticate(request, env))) {
                     return new Response("Unauthorized", {
                         status: 401,
@@ -43,6 +43,39 @@ export default {
                             "Access-Control-Allow-Origin": "*",
                         },
                     });
+                }
+            }
+            return fetch(request);
+        }
+            }
+            
+            if (request.method === "GET") {
+                const listDirectory = await env.AUTH_KV.get("config:list_directory");
+                if (listDirectory === "true") {
+                    const object = await bucket.head(key);
+                    if (!object) {
+                        const listed = await bucket.list({ prefix: key });
+                        const objects = listed.objects;
+                        
+                        const links = objects.map(obj => {
+                            const name = obj.key.replace(key, "");
+                            return `<li><a href="/${encodeURIComponent(obj.key)}">${name || "/"}</a></li>`;
+                        }).join("");
+
+                        return new Response(`
+                            <!DOCTYPE html>
+                            <html>
+                            <head><title>Index of ${key || "/"}</title></head>
+                            <body>
+                                <h1>Index of ${key || "/"}</h1>
+                                <ul>${links || "<li>No objects found.</li>"}</ul>
+                                <a href="../">Parent Directory</a>
+                            </body>
+                            </html>
+                        `, { 
+                            headers: { "Content-Type": "text/html", "Access-Control-Allow-Origin": "*" } 
+                        });
+                    }
                 }
             }
             return fetch(request);

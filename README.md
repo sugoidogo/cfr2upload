@@ -11,6 +11,7 @@ A Cloudflare Worker that allows you to upload large files to an R2 bucket using 
 - **Progress Tracking**: Displays real-time progress for both individual parts and the overall file.
 - **Basic Authentication**: Authentication using Cloudflare KV to protect upload endpoints.
 - **Optional Read Protection**: Can extend authentication to pass-through read requests.
+- **Optional Directory Listing**: Can list files in the bucket when a path doesn't match an object.
 - **Pass-through Reads**: Requests without upload actions are passed directly to the R2 bucket.
 
 ## Setup
@@ -24,10 +25,12 @@ A Cloudflare Worker that allows you to upload large files to an R2 bucket using 
 
 ## Configuration
 
-You can control authentication behavior by adding a key to your `AUTH_KV` namespace:
+You can control authentication and display behavior by adding keys to your `AUTH_KV` namespace:
 
 - Key: `config:auth_read_only`
-- Value: `true` (to require authentication for pass-through read requests. Defaults to `false` if key is missing).
+  - Value: `false` (to disable authentication for pass-through read requests. Defaults to `true` if key is missing).
+- Key: `config:list_directory`
+  - Value: `true` (to enable HTML directory listing for paths that are not objects. Defaults to `false` if key is missing).
 
 ## Deployment
 
