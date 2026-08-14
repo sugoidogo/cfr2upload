@@ -73,7 +73,8 @@
                 return;
             }
 
-            const PART_SIZE = 10 * 1024 * 1024; // 10MB
+            const PART_SIZE = 100 * 1024 * 1024; // 100MB - Maximum for Free/Pro plans
+            const CONCURRENCY = 4;
             const fileName = file.name;
             const origin = window.location.origin;
             const storageKey = `upload_state_${encodeURIComponent(fileName)}_${file.size}`;
@@ -97,50 +98,81 @@
 
                 const { uploadId } = state;
                 const totalParts = Math.ceil(file.size / PART_SIZE);
-                let uploadedBytes = 0;
+                
+                // Track exact bytes uploaded for each part to enable accurate parallel progress tracking
+                const partProgress = new Map();
+                for (let i = 1; i <= totalParts; i++) {
+                    const size = Math.min(PART_SIZE, file.size - (i - 1) * PART_SIZE);
+                    const isCompleted = state.parts.some(p => p.partNumber === i);
+                    partProgress.set(i, isCompleted ? size : 0);
+                }
 
+                const updateOverallProgress = () => {
+                    const totalUploaded = Array.from(partProgress.values()).reduce((a, b) => a + b, 0);
+                    const percent = ((totalUploaded / file.size) * 100).toFixed(2);
+                    progress.value = percent;
+                    status.textContent = `Uploading... ${percent}%`;
+                };
+
+                const pendingParts = [];
                 for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
-                    if (state.parts.some(p => p.partNumber === partNumber)) {
-                        uploadedBytes += Math.min(PART_SIZE, file.size - (partNumber - 1) * PART_SIZE);
-                        continue;
+                    if (!state.parts.some(p => p.partNumber === partNumber)) {
+                        pendingParts.push(partNumber);
                     }
+                }
 
+                const uploadPart = (partNumber) => new Promise((resolve, reject) => {
                     const start = (partNumber - 1) * PART_SIZE;
                     const end = Math.min(partNumber * PART_SIZE, file.size);
                     const chunk = file.slice(start, end);
+                    const xhr = new XMLHttpRequest();
+                    
+                    xhr.open('PUT', `${origin}/${encodeURIComponent(fileName)}?action=mpu-uploadpart&uploadId=${uploadId}&partNumber=${partNumber}`);
+                    
+                    xhr.upload.onprogress = (e) => {
+                        if (e.lengthComputable) {
+                            partProgress.set(partNumber, e.loaded);
+                            updateOverallProgress();
+                        }
+                    };
 
-                    const uploadPart = () => new Promise((resolve, reject) => {
-                        const xhr = new XMLHttpRequest();
-                        xhr.open('PUT', `${origin}/${encodeURIComponent(fileName)}?action=mpu-uploadpart&uploadId=${uploadId}&partNumber=${partNumber}`);
-                        
-                        xhr.upload.onprogress = (e) => {
-                            if (e.lengthComputable) {
-                                const partPercent = Math.round((e.loaded / e.total) * 100);
-                                const totalPercent = Math.round(((uploadedBytes + e.loaded) / file.size) * 100);
-                                status.textContent = `Uploading part ${partNumber}/${totalParts}: ${partPercent}% (Total: ${totalPercent}%)`;
-                                progress.value = totalPercent;
-                            }
-                        };
+                    xhr.onload = () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            resolve(JSON.parse(xhr.responseText));
+                        } else {
+                            reject(new Error(`Failed to upload part ${partNumber}: ${xhr.statusText}`));
+                        }
+                    };
+                    xhr.onerror = () => reject(new Error(`Network error uploading part ${partNumber}`));
+                    xhr.send(chunk);
+                });
 
-                        xhr.onload = () => {
-                            if (xhr.status >= 200 && xhr.status < 300) {
-                                resolve(JSON.parse(xhr.responseText));
-                            } else {
-                                reject(new Error(`Failed to upload part ${partNumber}: ${xhr.statusText}`));
-                            }
-                        };
-                        xhr.onerror = () => reject(new Error(`Network error uploading part ${partNumber}`));
-                        xhr.send(chunk);
-                    });
+                const workers = [];
+                const queue = [...pendingParts];
 
-                    const partInfo = await uploadPart();
-                    state.parts.push(partInfo);
-                    localStorage.setItem(storageKey, JSON.stringify(state));
-                    updateResumableList();
-
-                    uploadedBytes += chunk.size;
-                    progress.value = (uploadedBytes / file.size) * 100;
+                async function processQueue() {
+                    while (queue.length > 0) {
+                        const partNumber = queue.shift();
+                        try {
+                            const partInfo = await uploadPart(partNumber);
+                            state.parts.push(partInfo);
+                            localStorage.setItem(storageKey, JSON.stringify(state));
+                            updateResumableList();
+                            
+                            // Ensure we mark it as fully uploaded in the map
+                            partProgress.set(partNumber, Math.min(PART_SIZE, file.size - (partNumber - 1) * PART_SIZE));
+                            updateOverallProgress();
+                        } catch (e) {
+                            throw e;
+                        }
+                    }
                 }
+
+                for (let i = 0; i < Math.min(CONCURRENCY, pendingParts.length); i++) {
+                    workers.push(processQueue());
+                }
+
+                await Promise.all(workers);
 
                 status.textContent = "Completing upload...";
                 const sortedParts = state.parts.sort((a, b) => a.partNumber - b.partNumber);
