@@ -18,7 +18,7 @@ async function authenticate(request: Request, env: any) {
 export default {
     async fetch(request: Request, env: any) {
         const url = new URL(request.url);
-        const bucket = env.bucket;
+        const bucket = env.BUCKET;
         const key = url.pathname.slice(1);
         const action = url.searchParams.get("action");
 
@@ -33,6 +33,18 @@ export default {
         }
 
         if (!action) {
+            const authReadOnly = await env.AUTH_KV.get("config:auth_read_only");
+            if (authReadOnly === "true") {
+                if (!(await authenticate(request, env))) {
+                    return new Response("Unauthorized", {
+                        status: 401,
+                        headers: {
+                            "WWW-Authenticate": 'Basic realm="Secure Upload"',
+                            "Access-Control-Allow-Origin": "*",
+                        },
+                    });
+                }
+            }
             return fetch(request);
         }
 

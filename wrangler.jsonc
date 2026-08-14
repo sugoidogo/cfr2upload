@@ -5,7 +5,7 @@
     "main": "src/worker.ts",
     "r2_buckets": [
         {
-            "binding": "bucket",
+            "binding": "BUCKET",
             "bucket_name": "shared"
         }
     ],
@@ -14,8 +14,14 @@
     },
     "kv_namespaces": [
         {
-            "id": "cfr2upload",
+            "id": "08955b4bd64a4dc798384d133596c10d",
             "binding": "AUTH_KV"
+        }
+    ],
+    "routes": [
+        {
+            "pattern": "files.sugoidogo.com/*",
+            "zone_name": "sugoidogo.com"
         }
     ]
 }
