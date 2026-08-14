@@ -110,8 +110,9 @@
                 const updateOverallProgress = () => {
                     const totalUploaded = Array.from(partProgress.values()).reduce((a, b) => a + b, 0);
                     const percent = ((totalUploaded / file.size) * 100).toFixed(2);
+                    const completedParts = state.parts.length;
                     progress.value = percent;
-                    status.textContent = `Uploading... ${percent}%`;
+                    status.textContent = `Uploaded parts ${completedParts}/${totalParts}: ${percent}%`;
                 };
 
                 const pendingParts = [];
