@@ -1,3 +1,20 @@
+async function authenticate(request: Request, env: any) {
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Basic ")) {
+        return false;
+    }
+
+    const base64Credentials = authHeader.substring(6);
+    const credentials = atob(base64Credentials);
+    const [username, password] = credentials.split(":");
+
+    if (!username || !password) return false;
+
+    // Look up the password for the given username in KV
+    const storedPassword = await env.AUTH_KV.get(`user:${username}`);
+    return storedPassword === password;
+}
+
 export default {
     async fetch(request: Request, env: any) {
         const url = new URL(request.url);
@@ -10,13 +27,23 @@ export default {
                 headers: {
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "POST, PUT, GET, OPTIONS",
-                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Allow-Headers": "Authorization, Content-Type",
                 },
             });
         }
 
         if (!action) {
             return fetch(request);
+        }
+
+        if (!(await authenticate(request, env))) {
+            return new Response("Unauthorized", {
+                status: 401,
+                headers: {
+                    "WWW-Authenticate": 'Basic realm="Secure Upload"',
+                    "Access-Control-Allow-Origin": "*",
+                },
+            });
         }
 
         switch (request.method) {

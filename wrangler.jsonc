@@ -11,5 +11,11 @@
     ],
     "assets": {
         "directory": "src/static"
-    }
+    },
+    "kv_namespaces": [
+        {
+            "id": "cfr2upload",
+            "binding": "AUTH_KV"
+        }
+    ]
 }
