@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>R2 Large File Upload</title>
+    <script type="module">
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        function updateResumableList() {
+            const listContainer = document.getElementById('resumable-list');
+            listContainer.innerHTML = '';
+            
+            const resumables = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('upload_state_')) {
+                    const state = JSON.parse(localStorage.getItem(key));
+                    // key is upload_state_filename_size
+                    const parts = key.split('_');
+                    const size = parts.pop();
+                    const encodedName = parts.slice(2).join('_');
+                    const fileName = decodeURIComponent(encodedName);
+                    
+                    resumables.push({
+                        fileName,
+                        size,
+                        key,
+                        progress: state.parts.length
+                    });
+                }
+            }
+
+            if (resumables.length === 0) {
+                listContainer.style.display = 'none';
+                return;
+            }
+
+            listContainer.style.display = 'block';
+            const ul = document.createElement('ul');
+            resumables.forEach(item => {
+                    const li = document.createElement('li');
+                    li.textContent = `Resumable: ${item.fileName} (Size: ${formatBytes(item.size)})`;
+                    
+                    const clearBtn = document.createElement('button');
+                clearBtn.textContent = 'Clear';
+                clearBtn.style.marginLeft = '10px';
+                clearBtn.onclick = () => {
+                    localStorage.removeItem(item.key);
+                    updateResumableList();
+                };
+                
+                li.appendChild(clearBtn);
+                ul.appendChild(li);
+            });
+            listContainer.appendChild(ul);
+        }
+
+        async function uploadFile() {
+            const fileInput = document.querySelector('input[type="file"]');
+            const status = document.getElementById('status');
+            const progress = document.getElementById('progress');
+            const linkContainer = document.getElementById('link-container');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                status.textContent = "Please select a file first.";
+                return;
+            }
+
+            const PART_SIZE = 10 * 1024 * 1024; // 10MB
+            const fileName = file.name;
+            const origin = window.location.origin;
+            const storageKey = `upload_state_${encodeURIComponent(fileName)}_${file.size}`;
+
+            try {
+                status.textContent = "Initializing upload...";
+                linkContainer.innerHTML = '';
+                progress.style.display = 'block';
+                
+                let state = JSON.parse(localStorage.getItem(storageKey));
+
+                if (!state) {
+                    const createRes = await fetch(`${origin}/${encodeURIComponent(fileName)}?action=mpu-create`, { method: 'POST' });
+                    if (!createRes.ok) throw new Error(`Failed to create upload: ${await createRes.text()}`);
+                    const { uploadId } = await createRes.json();
+                    state = { uploadId, parts: [] };
+                    localStorage.setItem(storageKey, JSON.stringify(state));
+                } else {
+                    status.textContent = "Resuming interrupted upload...";
+                }
+
+                const { uploadId } = state;
+                const totalParts = Math.ceil(file.size / PART_SIZE);
+                let uploadedBytes = 0;
+
+                for (let partNumber = 1; partNumber <= totalParts; partNumber++) {
+                    if (state.parts.some(p => p.partNumber === partNumber)) {
+                        uploadedBytes += Math.min(PART_SIZE, file.size - (partNumber - 1) * PART_SIZE);
+                        continue;
+                    }
+
+                    const start = (partNumber - 1) * PART_SIZE;
+                    const end = Math.min(partNumber * PART_SIZE, file.size);
+                    const chunk = file.slice(start, end);
+
+                    const uploadPart = () => new Promise((resolve, reject) => {
+                        const xhr = new XMLHttpRequest();
+                        xhr.open('PUT', `${origin}/${encodeURIComponent(fileName)}?action=mpu-uploadpart&uploadId=${uploadId}&partNumber=${partNumber}`);
+                        
+                        xhr.upload.onprogress = (e) => {
+                            if (e.lengthComputable) {
+                                const partPercent = Math.round((e.loaded / e.total) * 100);
+                                const totalPercent = Math.round(((uploadedBytes + e.loaded) / file.size) * 100);
+                                status.textContent = `Uploading part ${partNumber}/${totalParts}: ${partPercent}% (Total: ${totalPercent}%)`;
+                                progress.value = totalPercent;
+                            }
+                        };
+
+                        xhr.onload = () => {
+                            if (xhr.status >= 200 && xhr.status < 300) {
+                                resolve(JSON.parse(xhr.responseText));
+                            } else {
+                                reject(new Error(`Failed to upload part ${partNumber}: ${xhr.statusText}`));
+                            }
+                        };
+                        xhr.onerror = () => reject(new Error(`Network error uploading part ${partNumber}`));
+                        xhr.send(chunk);
+                    });
+
+                    const partInfo = await uploadPart();
+                    state.parts.push(partInfo);
+                    localStorage.setItem(storageKey, JSON.stringify(state));
+                    updateResumableList();
+
+                    uploadedBytes += chunk.size;
+                    progress.value = (uploadedBytes / file.size) * 100;
+                }
+
+                status.textContent = "Completing upload...";
+                const sortedParts = state.parts.sort((a, b) => a.partNumber - b.partNumber);
+                
+                const completeRes = await fetch(
+                    `${origin}/${encodeURIComponent(fileName)}?action=mpu-complete&uploadId=${uploadId}`, 
+                    { 
+                        method: 'POST', 
+                        body: JSON.stringify({ parts: sortedParts }) 
+                    }
+                );
+
+                if (!completeRes.ok) throw new Error(`Failed to complete upload: ${await completeRes.text()}`);
+
+                localStorage.removeItem(storageKey);
+                updateResumableList();
+                status.textContent = "Upload successful!";
+                const fileUrl = `${origin}/${encodeURIComponent(fileName)}`;
+                linkContainer.innerHTML = `<a href="${fileUrl}" target="_blank">View uploaded file</a>`;
+                progress.style.display = 'none';
+
+            } catch (e) {
+                status.textContent = `Error: ${e.message}`;
+                progress.style.display = 'none';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelector('button').addEventListener('click', uploadFile);
+            updateResumableList();
+        });
+    </script>
+</head>
+<body>
+    <div id="status">Please select a file</div>
+    <progress id="progress" value="0" max="100" style="display: none; width: 100%;"></progress>
+    <div id="link-container"></div>
+    <div id="resumable-list" style="display: none; margin: 10px 0; padding: 10px; background: #f0f0f0; border: 1px solid #ccc;">
+        <strong>Resumable Uploads:</strong>
+    </div>
+    <br>
+    <input type="file">
+    <button>Upload</button>
+</body>
+</html>

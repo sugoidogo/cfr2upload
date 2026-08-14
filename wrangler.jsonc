@@ -1,0 +1,15 @@
+{
+    "$schema": "./node_modules/wrangler/config-schema.json",
+    "name": "cfr2upload",
+    "compatibility_date": "2026-01-01",
+    "main": "src/worker.ts",
+    "r2_buckets": [
+        {
+            "binding": "bucket",
+            "bucket_name": "shared"
+        }
+    ],
+    "assets": {
+        "directory": "src/static"
+    }
+}
