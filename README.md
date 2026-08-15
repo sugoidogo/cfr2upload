@@ -8,7 +8,9 @@ A Cloudflare Worker that allows you to upload large files to an R2 bucket using 
 
 - **Large File Support**: Uses R2 multipart upload API to bypass Worker request body limits.
 - **Resumable Uploads**: Tracks progress in `localStorage` to resume uploads after interruption.
-- **Progress Tracking**: Displays real-time progress for both individual parts and the overall file.
+- **Advanced Progress Tracking**: Real-time, precise total percentage and part-by-part progress.
+- **Parallel Uploads**: Configurable concurrency (multi-threading) to increase upload speeds.
+- **Customizable Chunking**: Adjustable part sizes (5MB to 100MB) to balance cost and reliability.
 - **Basic Authentication**: Authentication using Cloudflare KV to protect upload endpoints.
 - **Optional Read Protection**: Can extend authentication to pass-through read requests.
 - **Optional Directory Listing**: Can list files in the bucket when a path doesn't match an object.
