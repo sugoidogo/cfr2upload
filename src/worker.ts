@@ -19,7 +19,7 @@ export default {
     async fetch(request: Request, env: Env) {
         const url = new URL(request.url);
         const bucket = env.BUCKET;
-        const key = url.pathname.slice(1);
+        const key = decodeURIComponent(url.pathname.slice(1));
         const action = url.searchParams.get("action");
 
         if (request.method === "OPTIONS") {
