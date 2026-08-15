@@ -73,8 +73,10 @@
                 return;
             }
 
-            const PART_SIZE = 100 * 1024 * 1024; // 100MB - Maximum for Free/Pro plans
-            const CONCURRENCY = 4;
+            const PART_SIZE_INPUT = parseInt(document.getElementById('part-size').value, 10) || 100;
+            const PART_SIZE = PART_SIZE_INPUT * 1024 * 1024;
+            const concurrencyInput = document.getElementById('concurrency');
+            const CONCURRENCY = parseInt(concurrencyInput.value, 10) || 1;
             const fileName = file.name;
             const origin = window.location.origin;
             const storageKey = `upload_state_${encodeURIComponent(fileName)}_${file.size}`;
@@ -216,6 +218,22 @@
     </div>
     <br>
     <input type="file">
+    <label for="concurrency">Concurrent Uploads:</label>
+    <select id="concurrency">
+        <option value="1">1 (stablest)</option>
+        <option value="2">2</option>
+        <option value="4">4</option>
+        <option value="6" selected>6 (fastest)</option>
+    </select>
+    <label for="part-size">Part Size (MB):</label>
+    <select id="part-size">
+        <option value="1">1 MB (better resume, most expensive)</option>
+        <option value="5">5 MB</option>
+        <option value="10">10 MB</option>
+        <option value="25">25 MB</option>
+        <option value="50">50 MB</option>
+        <option value="100" selected>100 MB (fastest)</option>
+    </select>
     <button>Upload</button>
 </body>
 </html>
